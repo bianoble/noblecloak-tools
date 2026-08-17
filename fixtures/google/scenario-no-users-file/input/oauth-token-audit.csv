@@ -1,0 +1,3 @@
+time,actorEmail,clientId,displayText,scopes
+2026-03-01T00:00:00Z,dave@example.com,333333333333-ccc.apps.googleusercontent.com,Notion,https://www.googleapis.com/auth/drive.file
+2026-03-02T00:00:00Z,erin@example.com,444444444444-ddd.apps.googleusercontent.com,Figma,https://www.googleapis.com/auth/userinfo.profile

@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 1}
+{"userRef": "user_0dd3083280c94012", "clientId": "dddd4444-dddd-4444-dddd-444444444444", "appDisplayName": "Figma", "scopes": ["Files.Read", "User.Read"], "firstSeen": "2026-03-01T00:00:00Z", "lastUsed": null}

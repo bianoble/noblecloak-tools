@@ -1,0 +1,3 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 3}
+{"userRef": "user_241aea1c1a593c74", "clientId": "bbbb2222-bbbb-2222-bbbb-222222222222", "appDisplayName": "Zoom", "scopes": ["Calendars.Read"], "firstSeen": "2026-02-15T00:00:00Z", "lastUsed": null}
+{"userRef": "user_95be55b2f2b0c72e", "clientId": "aaaa1111-aaaa-1111-aaaa-111111111111", "appDisplayName": "Slack", "scopes": ["Mail.Read", "User.Read"], "firstSeen": "2026-01-10T00:00:00Z", "lastUsed": null}

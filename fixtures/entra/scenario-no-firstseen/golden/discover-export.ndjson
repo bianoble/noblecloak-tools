@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 1}
+{"userRef": "user_bb96c87e61d57422", "clientId": "cccc3333-cccc-3333-cccc-333333333333", "appDisplayName": "Notion", "scopes": ["Files.Read"], "firstSeen": null, "lastUsed": null}

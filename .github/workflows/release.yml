@@ -1,0 +1,51 @@
+name: release
+
+# Tagged releases (v*) only, gated on all three CI workflows already
+# having gone green on this commit -- see the epic's success criterion:
+# "Both scripts produce byte-identical DEF output ... in noblecloak-tools
+# CI" must hold before a release ships. No code-signing (out of scope for
+# this epic); integrity is SHA-256 checksums published in the release
+# notes and as a sidecar file, so a consumer (e.g. bianoble-discover) can
+# verify what they pinned against.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute SHA-256 checksums
+        id: checksums
+        run: |
+          {
+            echo "checksums<<EOF"
+            shasum -a 256 scripts/nc-export.py scripts/nc-export-entra.ps1 spec/discover-export-format-v1.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          shasum -a 256 scripts/nc-export.py scripts/nc-export-entra.ps1 spec/discover-export-format-v1.md > SHA256SUMS.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            SHA-256 checksums (also attached as `SHA256SUMS.txt`):
+
+            ```
+            ${{ steps.checksums.outputs.checksums }}
+            ```
+
+            No code-signing is applied to these scripts -- verify the
+            checksums above against what you download.
+          files: |
+            scripts/nc-export.py
+            scripts/nc-export-entra.ps1
+            spec/discover-export-format-v1.md
+            SHA256SUMS.txt

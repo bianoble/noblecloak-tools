@@ -1,0 +1,11 @@
+{
+  "value": [
+    {
+      "id": "grant-1",
+      "clientId": "10000000-0000-0000-0000-000000000003",
+      "principalId": "00000000-0000-0000-0000-0000000000b1",
+      "resourceId": "msgraph-resource-sp",
+      "scope": "Files.Read"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Local, ad hoc export output — never commit real customer data
+/out/
+*.local.ndjson
+
+# PowerShell / Pester (Invoke-Pester -CI writes this to the CWD)
+testResults.xml
+TestResults*.xml
+
+# Python coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# OS cruft
+.DS_Store
