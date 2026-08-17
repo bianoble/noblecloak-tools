@@ -97,6 +97,21 @@ kept byte-identical to `nc-export-entra.ps1` by CI — see
 | `tests/parity/` | Cross-language byte-identical parity tests. |
 | `.github/workflows/` | CI (per-language) and the tagged-release workflow. |
 
+## Development
+
+Both languages' test runners are stdlib-only — no `pip install` or `npm
+install` needed. Run everything CI runs, in one shot:
+
+```sh
+scripts/dev/ci-check.sh
+```
+
+This runs the Python unit + fixture-parity suites (`tests/python`,
+`tests/parity`) and, if `pwsh` is on `PATH`, the PowerShell suite
+(`tests/powershell`). It's a straight local reproduction of
+[`ci-python.yml`, `ci-powershell.yml`, and `ci-parity.yml`](.github/workflows/) —
+see the script for the exact commands.
+
 ## Docs
 
 More background, threat model, and integration guidance:
