@@ -1,0 +1,18 @@
+{
+  "value": [
+    {
+      "id": "sp-notion",
+      "appId": "cccc3333-cccc-3333-cccc-333333333333",
+      "displayName": "Notion",
+      "appRoles": [
+        { "id": "role-reader-guid", "value": "Reader" },
+        { "id": "role-admin-guid", "value": "Admin" }
+      ]
+    },
+    {
+      "id": "sp-figma",
+      "appId": "dddd4444-dddd-4444-dddd-444444444444",
+      "displayName": "Figma"
+    }
+  ]
+}

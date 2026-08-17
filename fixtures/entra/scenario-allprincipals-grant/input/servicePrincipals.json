@@ -1,0 +1,6 @@
+{
+  "value": [
+    { "id": "sp-powerbi", "appId": "10101010-1010-1010-1010-101010101010", "displayName": "Power BI" },
+    { "id": "sp-zoom", "appId": "bbbb2222-bbbb-2222-bbbb-222222222222", "displayName": "Zoom" }
+  ]
+}

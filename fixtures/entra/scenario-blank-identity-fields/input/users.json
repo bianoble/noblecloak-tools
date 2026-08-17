@@ -1,0 +1,8 @@
+{
+  "value": [
+    { "id": "u1-alice", "userPrincipalName": "alice@contoso.com", "displayName": "Alice" },
+    { "id": "u2-missing-upn", "displayName": "Missing UPN Key" },
+    { "id": "u3-null-upn", "userPrincipalName": null, "displayName": "Null UPN" },
+    { "id": "u4-blank-upn", "userPrincipalName": "   ", "displayName": "Blank UPN" }
+  ]
+}

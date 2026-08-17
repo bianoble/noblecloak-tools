@@ -1,0 +1,14 @@
+{
+  "value": [
+    { "id": "grant-good", "clientId": "sp1-slack", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-missing-upn", "clientId": "sp1-slack", "principalId": "u2-missing-upn", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-null-upn", "clientId": "sp1-slack", "principalId": "u3-null-upn", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-blank-upn", "clientId": "sp1-slack", "principalId": "u4-blank-upn", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-missing-appid", "clientId": "sp2-missing-appid", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-null-appid", "clientId": "sp3-null-appid", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-blank-appid", "clientId": "sp4-blank-appid", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-missing-displayname", "clientId": "sp5-missing-displayname", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-null-displayname", "clientId": "sp6-null-displayname", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" },
+    { "id": "grant-blank-displayname", "clientId": "sp7-blank-displayname", "principalId": "u1-alice", "resourceId": "r1", "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z" }
+  ]
+}

@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "google", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export.py", "exportWindow": null, "userCountTotal": 3, "skippedRows": 3}
+{"userRef": "user_ffa2d4b636a5ffa4", "consentType": "Principal", "clientId": "111-aaa.apps.googleusercontent.com", "appDisplayName": "Slack", "scopes": ["https://www.googleapis.com/auth/drive.readonly"], "firstSeen": "2026-01-05T10:00:00Z", "lastUsed": "2026-01-05T10:00:00Z"}

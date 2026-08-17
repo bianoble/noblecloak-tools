@@ -1,0 +1,3 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 2, "skippedRows": 0}
+{"userRef": "user_b596038a53893df2", "consentType": "Principal", "clientId": "cccc3333-cccc-3333-cccc-333333333333", "appDisplayName": "Notion", "scopes": ["Files.Read", "appRole:Reader"], "firstSeen": "2026-02-20T00:00:00Z", "lastUsed": null}
+{"userRef": "user_d9b899aca872c037", "consentType": "Principal", "clientId": "dddd4444-dddd-4444-dddd-444444444444", "appDisplayName": "Figma", "scopes": ["appRole:99999999-9999-9999-9999-999999999999"], "firstSeen": "2026-03-05T00:00:00Z", "lastUsed": null}

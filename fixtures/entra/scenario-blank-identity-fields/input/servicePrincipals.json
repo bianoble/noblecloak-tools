@@ -1,0 +1,11 @@
+{
+  "value": [
+    { "id": "sp1-slack", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack" },
+    { "id": "sp2-missing-appid", "displayName": "Missing appId" },
+    { "id": "sp3-null-appid", "appId": null, "displayName": "Null appId" },
+    { "id": "sp4-blank-appid", "appId": "   ", "displayName": "Blank appId" },
+    { "id": "sp5-missing-displayname", "appId": "dddd5555-dddd-5555-dddd-555555555555" },
+    { "id": "sp6-null-displayname", "appId": "eeee6666-eeee-6666-eeee-666666666666", "displayName": null },
+    { "id": "sp7-blank-displayname", "appId": "ffff7777-ffff-7777-ffff-777777777777", "displayName": "   " }
+  ]
+}
