@@ -28,9 +28,16 @@ GitHub org: bianoble
   `userCountTotal`) are explicit and nullable rather than guessed, so a
   partial export is never mistaken for a complete one.
 - **Explicit confirmation, every run.** Both scripts end a successful run
-  by printing "Nothing has been sent anywhere. Review
-  discover-export.ndjson, then upload it in the Discover app." to stdout
-  — so you don't have to take the privacy model on faith.
+  by printing a `Skipped rows: N` summary line (always printed, even when
+  `N` is `0`, so silent data loss is never invisible) immediately followed
+  by "Nothing has been sent anywhere. Review discover-export.ndjson, then
+  upload it in the Discover app." to stdout — so you don't have to take
+  the privacy model on faith. A row with a missing, blank, or unresolvable
+  identity field (email/UPN, client ID, app name) is skipped with a
+  warning rather than silently mangled or dropped without a trace, and an
+  entirely empty result (zero users or zero grants) prints a loud warning
+  in case it signals a permission problem rather than a genuinely empty
+  tenant.
 
 Full format details: [`spec/discover-export-format-v1.md`](spec/discover-export-format-v1.md).
 
@@ -63,6 +70,22 @@ pwsh scripts/nc-export-entra.ps1 \
   -OutDir ./out
 ```
 
+Or with the Python implementation of the same file-mode path:
+
+```sh
+python3 scripts/nc-export.py entra \
+  --users-json users.json \
+  --service-principals-json servicePrincipals.json \
+  --grants-json oauth2PermissionGrants.json \
+  --out-dir ./out
+```
+
+Both accept an **optional fourth input**, an exported
+`appRoleAssignments.json` (`-AppRoleAssignmentsJson` / `--app-role-assignments-json`),
+to additionally include app-role assignment grants alongside
+`oauth2PermissionGrants`. Omit it and the feature is simply off —
+this input is entirely back-compatible.
+
 **Live mode** (calls Microsoft Graph directly via the `Microsoft.Graph`
 PowerShell SDK):
 
@@ -78,7 +101,17 @@ Live mode requests exactly these read-only scopes, and no others:
 
 This list is pinned in the script header and checked against this README
 by `tests/powershell/NcExportEntraLive.Tests.ps1`, so the two can't drift
-silently.
+silently. Live mode also verifies, after consent, that all three scopes
+were actually granted — and fails loudly (rather than silently exporting
+a partial result) if any are missing. It additionally fetches app-role
+assignments per service principal (`/servicePrincipals/{id}/appRoleAssignedTo`,
+paged, filtered to `principalType 'User'`).
+
+An Entra `oauth2PermissionGrants` row with `consentType: "AllPrincipals"`
+(a tenant-wide admin consent grant, with no associated user) is emitted
+as its own grant line with `userRef: null` and `consentType: "AllPrincipals"`
+— never skipped, never counted toward `skippedRows`, never written to
+`mapping.csv`.
 
 Both modes write the same [DEF](spec/discover-export-format-v1.md) shape
 as the Python/Google path, and `nc-export.py entra` (file mode only) is
