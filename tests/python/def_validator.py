@@ -15,6 +15,7 @@ import re
 
 VALID_VENDORS = {"google", "entra"}
 VALID_HASH_ALGO = "hmac-sha256"
+VALID_CONSENT_TYPES = {"Principal", "AllPrincipals"}
 DEF_KIND = "discover-export"
 DEF_VERSION = "1"
 
@@ -28,10 +29,12 @@ HEADER_REQUIRED_FIELDS = (
     "script",
     "exportWindow",
     "userCountTotal",
+    "skippedRows",
 )
 
 GRANT_REQUIRED_FIELDS = (
     "userRef",
+    "consentType",
     "clientId",
     "appDisplayName",
     "scopes",
@@ -83,22 +86,39 @@ def validate_header(header: dict) -> None:
     if header["userCountTotal"] is not None and not isinstance(header["userCountTotal"], int):
         raise DefValidationError("header.userCountTotal must be null or an integer")
 
+    if not isinstance(header["skippedRows"], int) or isinstance(header["skippedRows"], bool):
+        raise DefValidationError("header.skippedRows must be an integer")
+    if header["skippedRows"] < 0:
+        raise DefValidationError("header.skippedRows must not be negative")
+
 
 def validate_grant(grant: dict, pseudonymized: bool) -> None:
     for field in GRANT_REQUIRED_FIELDS:
         if field not in grant:
             raise DefValidationError(f"grant missing required field: {field}")
 
-    user_ref = grant["userRef"]
-    if not isinstance(user_ref, str) or not user_ref:
-        raise DefValidationError("grant.userRef must be a non-empty string")
+    consent_type = grant["consentType"]
+    if consent_type not in VALID_CONSENT_TYPES:
+        raise DefValidationError(
+            f"grant.consentType must be one of {sorted(VALID_CONSENT_TYPES)}, got {consent_type!r}"
+        )
 
-    if pseudonymized:
-        if not USER_REF_HASH_RE.match(user_ref):
+    user_ref = grant["userRef"]
+    if consent_type == "AllPrincipals":
+        if user_ref is not None:
             raise DefValidationError(
-                f"grant.userRef {user_ref!r} does not match hashed format "
-                f"^user_[0-9a-f]{{16}}$ required when header.pseudonymized is true"
+                "grant.userRef must be null when grant.consentType is 'AllPrincipals'"
             )
+    else:
+        if not isinstance(user_ref, str) or not user_ref:
+            raise DefValidationError("grant.userRef must be a non-empty string")
+
+        if pseudonymized:
+            if not USER_REF_HASH_RE.match(user_ref):
+                raise DefValidationError(
+                    f"grant.userRef {user_ref!r} does not match hashed format "
+                    f"^user_[0-9a-f]{{16}}$ required when header.pseudonymized is true"
+                )
 
     if not isinstance(grant["clientId"], str) or not grant["clientId"]:
         raise DefValidationError("grant.clientId must be a non-empty string")
