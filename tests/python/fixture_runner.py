@@ -45,6 +45,7 @@ def run_google_scenario(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> su
 def run_entra_scenario(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> subprocess.CompletedProcess:
     input_dir = scenario_dir / "input"
     salt_file = scenario_dir / "salt.txt"
+    app_role_assignments = input_dir / "appRoleAssignments.json"
 
     args = [
         sys.executable, str(NC_EXPORT), "entra",
@@ -54,6 +55,8 @@ def run_entra_scenario(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> sub
         "--out-dir", str(out_dir),
         "--generated-at", GOLDEN_GENERATED_AT,
     ]
+    if app_role_assignments.is_file():
+        args += ["--app-role-assignments-json", str(app_role_assignments)]
 
     if scenario_dir.name in NO_PSEUDONYMIZE_SCENARIOS:
         args += ["--no-pseudonymize"]

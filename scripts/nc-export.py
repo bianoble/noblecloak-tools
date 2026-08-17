@@ -3,7 +3,8 @@
 
 Reads a Google Workspace OAuth Token Audit CSV (and optionally a Users
 CSV) or a Microsoft Entra ID users/servicePrincipals/oauth2PermissionGrants
-JSON triplet, and writes a pseudonymized (by default) DEF v1 NDJSON file.
+JSON triplet (and optionally an appRoleAssignments JSON export), and
+writes a pseudonymized (by default) DEF v1 NDJSON file.
 
 See spec/discover-export-format-v1.md for the exact output format this
 script must produce, and fixtures/ for golden input/output pairs.
@@ -48,9 +49,18 @@ HEADER_KEYS = [
     "script",
     "exportWindow",
     "userCountTotal",
+    "skippedRows",
 ]
 
-GRANT_KEYS = ["userRef", "clientId", "appDisplayName", "scopes", "firstSeen", "lastUsed"]
+GRANT_KEYS = [
+    "userRef",
+    "consentType",
+    "clientId",
+    "appDisplayName",
+    "scopes",
+    "firstSeen",
+    "lastUsed",
+]
 
 GOOGLE_AUDIT_REQUIRED_COLUMNS = ["time", "actorEmail", "clientId", "displayText", "scopes"]
 # scopes is intentionally excluded here: per spec/discover-export-format-v1.md
@@ -70,6 +80,15 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def _is_blank(value) -> bool:
+    """True when value is missing (None) or, if a string, empty/whitespace-only."""
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    return value.strip() == ""
+
+
 def derive_user_ref(salt_bytes: bytes, email: str, pseudonymized: bool) -> str:
     normalized = normalize_email(email)
     if not pseudonymized:
@@ -79,24 +98,32 @@ def derive_user_ref(salt_bytes: bytes, email: str, pseudonymized: bool) -> str:
 
 
 def dedupe_grants(raw_grants: list[dict]) -> list[dict]:
-    """Collapse raw (event-level) grant rows into one entry per (email, clientId).
+    """Collapse raw (event-level) grant rows into one entry per (email, clientId) --
+    or, for an "AllPrincipals" row (no associated user), per clientId alone.
 
-    Each raw grant dict has keys: email, clientId, appDisplayName, scopes
-    (list[str]), firstSeen (str|None), lastUsed (str|None).
+    Each raw grant dict has keys: email (str|None), clientId, appDisplayName,
+    consentType ("Principal"|"AllPrincipals"), scopes (list[str]),
+    firstSeen (str|None), lastUsed (str|None).
 
     Returns a list of dicts with the same shape, `scopes` deduplicated and
     sorted, `firstSeen`/`lastUsed` reduced to min/max of the non-null
-    values seen.
+    values seen. A "Principal" row and an "AllPrincipals" row for the same
+    clientId are never merged with each other -- they key differently.
     """
     grouped: dict[tuple[str, str], dict] = {}
     for raw in raw_grants:
-        key = (normalize_email(raw["email"]), raw["clientId"])
+        if raw.get("consentType") == "AllPrincipals":
+            key = ("\x00ALLPRINCIPALS\x00", raw["clientId"])
+        else:
+            key = (normalize_email(raw["email"]), raw["clientId"])
+
         entry = grouped.get(key)
         if entry is None:
             entry = {
-                "email": raw["email"],
+                "email": raw.get("email"),
                 "clientId": raw["clientId"],
                 "appDisplayName": raw["appDisplayName"],
+                "consentType": raw.get("consentType", "Principal"),
                 "scopes": set(),
                 "firstSeen": None,
                 "lastUsed": None,
@@ -119,18 +146,25 @@ def dedupe_grants(raw_grants: list[dict]) -> list[dict]:
 def build_grant_objects(grouped_grants: list[dict], salt_bytes: bytes, pseudonymized: bool) -> list[dict]:
     grants = []
     for entry in grouped_grants:
+        if entry["consentType"] == "AllPrincipals":
+            user_ref = None
+        else:
+            user_ref = derive_user_ref(salt_bytes, entry["email"], pseudonymized)
         grants.append(
             {
-                "userRef": derive_user_ref(salt_bytes, entry["email"], pseudonymized),
+                "userRef": user_ref,
                 "email": entry["email"],
                 "clientId": entry["clientId"],
                 "appDisplayName": entry["appDisplayName"],
+                "consentType": entry["consentType"],
                 "scopes": sorted(entry["scopes"]),
                 "firstSeen": entry["firstSeen"],
                 "lastUsed": entry["lastUsed"],
             }
         )
-    grants.sort(key=lambda g: (g["userRef"], g["clientId"]))
+    # A null userRef ("AllPrincipals") sorts as if it were "" -- see
+    # spec/discover-export-format-v1.md "Grant line ordering".
+    grants.sort(key=lambda g: (g["userRef"] or "", g["clientId"]))
     return grants
 
 
@@ -148,7 +182,9 @@ def parse_google_audit_csv(path: str) -> tuple[list[dict], list[str]]:
     """Parse a Google OAuth Token Audit CSV.
 
     Returns (raw_grants, warnings). Raises ExportError for a missing
-    required column or a completely empty (headerless) file.
+    required column or a completely empty (headerless) file. A row with a
+    missing, explicit-empty, or whitespace-only required value is skipped
+    with a warning rather than raising.
     """
     try:
         fh = open(path, "r", encoding="utf-8", newline="")
@@ -171,12 +207,14 @@ def parse_google_audit_csv(path: str) -> tuple[list[dict], list[str]]:
         for row_number, row in enumerate(reader, start=2):  # header is line 1
             values = {col: row.get(col) for col in GOOGLE_AUDIT_REQUIRED_COLUMNS}
             missing_values = [
-                col for col in GOOGLE_AUDIT_REQUIRED_NONEMPTY_COLUMNS if not values.get(col)
+                col
+                for col in GOOGLE_AUDIT_REQUIRED_NONEMPTY_COLUMNS
+                if (values.get(col) or "").strip() == ""
             ]
             if missing_values:
                 warnings.append(
                     f"skipping malformed row {row_number} in {path!r}: "
-                    f"missing value(s) for {', '.join(missing_values)}"
+                    f"missing/blank value(s) for {', '.join(missing_values)}"
                 )
                 continue
 
@@ -187,6 +225,7 @@ def parse_google_audit_csv(path: str) -> tuple[list[dict], list[str]]:
                     "email": values["actorEmail"],
                     "clientId": values["clientId"],
                     "appDisplayName": values["displayText"],
+                    "consentType": "Principal",
                     "scopes": scopes,
                     "firstSeen": values["time"],
                     "lastUsed": values["time"],
@@ -216,12 +255,102 @@ def _graph_values(document: dict, path: str) -> list[dict]:
     return values
 
 
-def parse_entra_triplet(users_path: str, service_principals_path: str, grants_path: str) -> tuple[int, list[dict], list[str]]:
-    """Parse a users/servicePrincipals/oauth2PermissionGrants Graph JSON triplet.
+def parse_app_role_assignments(
+    path: str, users_by_id: dict[str, dict], sps_by_id: dict[str, dict]
+) -> tuple[list[dict], list[str]]:
+    """Parse an optional appRoleAssignments.json Graph list-response export.
+
+    Produces raw grants in the same shape as the oauth2PermissionGrants
+    path, so both feed the same dedupe_grants()/build_grant_objects()
+    pass -- see spec/discover-export-format-v1.md "Grant sources".
+    Returns (raw_grants, warnings).
+    """
+    doc = _read_json(path)
+    assignments = _graph_values(doc, path)
+
+    warnings: list[str] = []
+    raw_grants: list[dict] = []
+    for index, assignment in enumerate(assignments, start=1):
+        principal_id = assignment.get("principalId")
+        resource_id = assignment.get("resourceId")
+        app_role_id = assignment.get("appRoleId")
+
+        sp = sps_by_id.get(resource_id)
+        if sp is None:
+            warnings.append(
+                f"skipping app role assignment {index} in {path!r}: "
+                f"resourceId {resource_id!r} not found among service principals"
+            )
+            continue
+
+        app_id = sp.get("appId")
+        if _is_blank(app_id):
+            warnings.append(
+                f"skipping app role assignment {index} in {path!r}: "
+                f"servicePrincipal {resource_id!r} has a missing/blank appId"
+            )
+            continue
+
+        display_name = sp.get("displayName")
+        if _is_blank(display_name):
+            warnings.append(
+                f"skipping app role assignment {index} in {path!r}: "
+                f"servicePrincipal {resource_id!r} has a missing/blank displayName"
+            )
+            continue
+
+        user = users_by_id.get(principal_id)
+        if user is None:
+            warnings.append(
+                f"skipping app role assignment {index} in {path!r}: "
+                f"principalId {principal_id!r} not found among users"
+            )
+            continue
+
+        upn = user.get("userPrincipalName")
+        if _is_blank(upn):
+            warnings.append(
+                f"skipping app role assignment {index} in {path!r}: "
+                f"user {principal_id!r} has a missing/blank userPrincipalName"
+            )
+            continue
+
+        roles_by_id = {
+            role["id"]: role.get("value")
+            for role in (sp.get("appRoles") or [])
+            if isinstance(role, dict) and isinstance(role.get("id"), str)
+        }
+        role_value = roles_by_id.get(app_role_id)
+        if _is_blank(role_value):
+            role_value = app_role_id if not _is_blank(app_role_id) else "unknown"
+
+        raw_grants.append(
+            {
+                "email": upn,
+                "clientId": app_id,
+                "appDisplayName": display_name,
+                "consentType": "Principal",
+                "scopes": [f"appRole:{role_value}"],
+                "firstSeen": assignment.get("createdDateTime"),
+                "lastUsed": None,
+            }
+        )
+
+    return raw_grants, warnings
+
+
+def parse_entra_triplet(
+    users_path: str,
+    service_principals_path: str,
+    grants_path: str,
+    app_role_assignments_path: Optional[str] = None,
+) -> tuple[int, list[dict], list[str]]:
+    """Parse a users/servicePrincipals/oauth2PermissionGrants Graph JSON triplet,
+    plus an optional appRoleAssignments export.
 
     Returns (user_count_total, raw_grants, warnings). raw_grants have the
     same shape dedupe_grants() expects: email, clientId, appDisplayName,
-    scopes, firstSeen, lastUsed.
+    consentType, scopes, firstSeen, lastUsed.
     """
     users_doc = _read_json(users_path)
     sps_doc = _read_json(service_principals_path)
@@ -239,12 +368,48 @@ def parse_entra_triplet(users_path: str, service_principals_path: str, grants_pa
     for index, grant in enumerate(grants, start=1):
         client_object_id = grant.get("clientId")
         principal_id = grant.get("principalId")
+        consent_type = "AllPrincipals" if grant.get("consentType") == "AllPrincipals" else "Principal"
 
         sp = sps_by_id.get(client_object_id)
         if sp is None:
             warnings.append(
                 f"skipping grant {index} in {grants_path!r}: "
                 f"clientId {client_object_id!r} not found in {service_principals_path!r}"
+            )
+            continue
+
+        app_id = sp.get("appId")
+        if _is_blank(app_id):
+            warnings.append(
+                f"skipping grant {index} in {grants_path!r}: "
+                f"servicePrincipal {client_object_id!r} has a missing/blank appId"
+            )
+            continue
+
+        display_name = sp.get("displayName")
+        if _is_blank(display_name):
+            warnings.append(
+                f"skipping grant {index} in {grants_path!r}: "
+                f"servicePrincipal {client_object_id!r} has a missing/blank displayName"
+            )
+            continue
+
+        scope_string = grant.get("scope") or ""
+        scopes = [s for s in scope_string.split(" ") if s]
+
+        if consent_type == "AllPrincipals":
+            # Tenant-wide admin consent: no associated user, never skipped,
+            # never counted in skippedRows -- see spec "Grant object".
+            raw_grants.append(
+                {
+                    "email": None,
+                    "clientId": app_id,
+                    "appDisplayName": display_name,
+                    "consentType": "AllPrincipals",
+                    "scopes": scopes,
+                    "firstSeen": grant.get("createdDateTime"),
+                    "lastUsed": None,
+                }
             )
             continue
 
@@ -256,19 +421,32 @@ def parse_entra_triplet(users_path: str, service_principals_path: str, grants_pa
             )
             continue
 
-        scope_string = grant.get("scope") or ""
-        scopes = [s for s in scope_string.split(" ") if s]
+        upn = user.get("userPrincipalName")
+        if _is_blank(upn):
+            warnings.append(
+                f"skipping grant {index} in {grants_path!r}: "
+                f"user {principal_id!r} has a missing/blank userPrincipalName"
+            )
+            continue
 
         raw_grants.append(
             {
-                "email": user.get("userPrincipalName", ""),
-                "clientId": sp.get("appId", ""),
-                "appDisplayName": sp.get("displayName", ""),
+                "email": upn,
+                "clientId": app_id,
+                "appDisplayName": display_name,
+                "consentType": "Principal",
                 "scopes": scopes,
                 "firstSeen": grant.get("createdDateTime"),
                 "lastUsed": None,
             }
         )
+
+    if app_role_assignments_path is not None:
+        ar_raw_grants, ar_warnings = parse_app_role_assignments(
+            app_role_assignments_path, users_by_id, sps_by_id
+        )
+        raw_grants.extend(ar_raw_grants)
+        warnings.extend(ar_warnings)
 
     return len(users), raw_grants, warnings
 
@@ -302,9 +480,14 @@ def parse_google_users_csv(path: str) -> int:
 
 def load_or_generate_salt(salt_file: Optional[str]) -> bytes:
     if salt_file is not None:
-        with open(salt_file, "r", encoding="utf-8") as fh:
-            salt_hex = fh.read().strip()
-        return bytes.fromhex(salt_hex)
+        try:
+            with open(salt_file, "r", encoding="utf-8") as fh:
+                salt_hex = fh.read().strip()
+            return bytes.fromhex(salt_hex)
+        except OSError as exc:
+            raise ExportError(f"cannot open salt file {salt_file!r}: {exc}") from exc
+        except ValueError as exc:
+            raise ExportError(f"salt file {salt_file!r} does not contain valid hex: {exc}") from exc
     return secrets.token_bytes(32)
 
 
@@ -318,6 +501,7 @@ def write_outputs(
     grant_objects: list[dict],
     salt_bytes: bytes,
     generated_at: str,
+    skipped_rows: int,
 ) -> None:
     os.makedirs(out_dir, exist_ok=True)
 
@@ -331,6 +515,7 @@ def write_outputs(
         "script": script_name,
         "exportWindow": export_window,
         "userCountTotal": user_count_total,
+        "skippedRows": skipped_rows,
     }
 
     lines = [dump_line(header, HEADER_KEYS)]
@@ -349,6 +534,8 @@ def write_outputs(
 
         seen_emails = {}
         for grant in grant_objects:
+            if grant["userRef"] is None:  # "AllPrincipals": no user to map
+                continue
             seen_emails[grant["userRef"]] = grant["email"]
 
         mapping_path = os.path.join(out_dir, "mapping.csv")
@@ -364,6 +551,25 @@ def _generated_at() -> str:
     import datetime
 
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _warn_if_empty_result(user_count_total: Optional[int], grant_objects: list[dict]) -> None:
+    """Loud, non-fatal warning: a zero-record result may be a permission/consent
+    problem, not a genuinely empty tenant -- see spec "Skipped-row / empty-result
+    signals". Still exits 0; an empty tenant is a legitimate outcome.
+    """
+    if user_count_total == 0:
+        print(
+            "warning: 0 users were found in the source data -- this may indicate "
+            "a permission or consent problem, not an empty tenant",
+            file=sys.stderr,
+        )
+    if not grant_objects:
+        print(
+            "warning: 0 grants were found in the source data -- this may indicate "
+            "a permission or consent problem, not an empty tenant",
+            file=sys.stderr,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +592,8 @@ def run_google(args: argparse.Namespace) -> None:
     grouped = dedupe_grants(raw_grants)
     grant_objects = build_grant_objects(grouped, salt_bytes, pseudonymized)
 
+    _warn_if_empty_result(user_count_total, grant_objects)
+
     write_outputs(
         out_dir=args.out_dir,
         vendor="google",
@@ -396,8 +604,10 @@ def run_google(args: argparse.Namespace) -> None:
         grant_objects=grant_objects,
         salt_bytes=salt_bytes,
         generated_at=args.generated_at or _generated_at(),
+        skipped_rows=len(warnings),
     )
 
+    print(f"Skipped rows: {len(warnings)}")
     print(CLOSING_MESSAGE)
 
 
@@ -435,6 +645,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     entra.add_argument(
         "--grants-json", required=True, help="Path to a Graph oauth2PermissionGrants list-response JSON export."
     )
+    entra.add_argument(
+        "--app-role-assignments-json",
+        default=None,
+        help=(
+            "Optional path to a Graph appRoleAssignments list-response JSON export. "
+            "When omitted, app-role assignments are simply not included (back-compatible)."
+        ),
+    )
     entra.add_argument("--out-dir", required=True, help="Directory to write DEF output into.")
     entra.add_argument("--salt-file", default=None, help="Path to a fixed hex salt (for reproducible output).")
     entra.add_argument(
@@ -454,7 +672,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def run_entra(args: argparse.Namespace) -> None:
     user_count_total, raw_grants, warnings = parse_entra_triplet(
-        args.users_json, args.service_principals_json, args.grants_json
+        args.users_json,
+        args.service_principals_json,
+        args.grants_json,
+        args.app_role_assignments_json,
     )
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
@@ -464,6 +685,8 @@ def run_entra(args: argparse.Namespace) -> None:
 
     grouped = dedupe_grants(raw_grants)
     grant_objects = build_grant_objects(grouped, salt_bytes, pseudonymized)
+
+    _warn_if_empty_result(user_count_total, grant_objects)
 
     write_outputs(
         out_dir=args.out_dir,
@@ -475,8 +698,10 @@ def run_entra(args: argparse.Namespace) -> None:
         grant_objects=grant_objects,
         salt_bytes=salt_bytes,
         generated_at=args.generated_at or _generated_at(),
+        skipped_rows=len(warnings),
     )
 
+    print(f"Skipped rows: {len(warnings)}")
     print(CLOSING_MESSAGE)
 
 
@@ -487,6 +712,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.func(args)
     except ExportError as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 -- last-resort guard: never surface a raw traceback
+        print(f"error: unexpected error: {exc}", file=sys.stderr)
         return 1
     return 0
 
