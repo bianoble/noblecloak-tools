@@ -189,17 +189,17 @@ def parse_google_audit_csv(path: str) -> tuple[list[dict], list[str]]:
     try:
         fh = open(path, "r", encoding="utf-8", newline="")
     except OSError as exc:
-        raise ExportError(f"cannot open audit CSV {path!r}: {exc}") from exc
+        raise ExportError(f"cannot open audit CSV '{path}': {exc}") from exc
 
     with fh:
         reader = csv.DictReader(fh)
         if reader.fieldnames is None:
-            raise ExportError(f"audit CSV {path!r} has no header row")
+            raise ExportError(f"audit CSV '{path}' has no header row")
 
         missing = [c for c in GOOGLE_AUDIT_REQUIRED_COLUMNS if c not in reader.fieldnames]
         if missing:
             raise ExportError(
-                f"audit CSV {path!r} is missing required column(s): {', '.join(missing)}"
+                f"audit CSV '{path}' is missing required column(s): {', '.join(missing)}"
             )
 
         raw_grants: list[dict] = []
@@ -213,7 +213,7 @@ def parse_google_audit_csv(path: str) -> tuple[list[dict], list[str]]:
             ]
             if missing_values:
                 warnings.append(
-                    f"skipping malformed row {row_number} in {path!r}: "
+                    f"skipping malformed row {row_number} in '{path}': "
                     f"missing/blank value(s) for {', '.join(missing_values)}"
                 )
                 continue
@@ -240,18 +240,18 @@ def _read_json(path: str) -> dict:
         with open(path, "r", encoding="utf-8") as fh:
             content = fh.read()
     except OSError as exc:
-        raise ExportError(f"cannot open {path!r}: {exc}") from exc
+        raise ExportError(f"cannot open '{path}': {exc}") from exc
 
     try:
         return json.loads(content)
     except json.JSONDecodeError as exc:
-        raise ExportError(f"invalid JSON in {path!r}: {exc}") from exc
+        raise ExportError(f"invalid JSON in '{path}': {exc}") from exc
 
 
 def _graph_values(document: dict, path: str) -> list[dict]:
     values = document.get("value")
     if not isinstance(values, list):
-        raise ExportError(f"{path!r} is not a Graph list response (missing a top-level \"value\" array)")
+        raise ExportError(f"'{path}' is not a Graph list response (missing a top-level \"value\" array)")
     return values
 
 
@@ -278,7 +278,7 @@ def parse_app_role_assignments(
         sp = sps_by_id.get(resource_id)
         if sp is None:
             warnings.append(
-                f"skipping app role assignment {index} in {path!r}: "
+                f"skipping app role assignment {index} in '{path}': "
                 f"resourceId {resource_id!r} not found among service principals"
             )
             continue
@@ -286,7 +286,7 @@ def parse_app_role_assignments(
         app_id = sp.get("appId")
         if _is_blank(app_id):
             warnings.append(
-                f"skipping app role assignment {index} in {path!r}: "
+                f"skipping app role assignment {index} in '{path}': "
                 f"servicePrincipal {resource_id!r} has a missing/blank appId"
             )
             continue
@@ -294,7 +294,7 @@ def parse_app_role_assignments(
         display_name = sp.get("displayName")
         if _is_blank(display_name):
             warnings.append(
-                f"skipping app role assignment {index} in {path!r}: "
+                f"skipping app role assignment {index} in '{path}': "
                 f"servicePrincipal {resource_id!r} has a missing/blank displayName"
             )
             continue
@@ -302,7 +302,7 @@ def parse_app_role_assignments(
         user = users_by_id.get(principal_id)
         if user is None:
             warnings.append(
-                f"skipping app role assignment {index} in {path!r}: "
+                f"skipping app role assignment {index} in '{path}': "
                 f"principalId {principal_id!r} not found among users"
             )
             continue
@@ -310,7 +310,7 @@ def parse_app_role_assignments(
         upn = user.get("userPrincipalName")
         if _is_blank(upn):
             warnings.append(
-                f"skipping app role assignment {index} in {path!r}: "
+                f"skipping app role assignment {index} in '{path}': "
                 f"user {principal_id!r} has a missing/blank userPrincipalName"
             )
             continue
@@ -373,15 +373,15 @@ def parse_entra_triplet(
         sp = sps_by_id.get(client_object_id)
         if sp is None:
             warnings.append(
-                f"skipping grant {index} in {grants_path!r}: "
-                f"clientId {client_object_id!r} not found in {service_principals_path!r}"
+                f"skipping grant {index} in '{grants_path}': "
+                f"clientId {client_object_id!r} not found in '{service_principals_path}'"
             )
             continue
 
         app_id = sp.get("appId")
         if _is_blank(app_id):
             warnings.append(
-                f"skipping grant {index} in {grants_path!r}: "
+                f"skipping grant {index} in '{grants_path}': "
                 f"servicePrincipal {client_object_id!r} has a missing/blank appId"
             )
             continue
@@ -389,7 +389,7 @@ def parse_entra_triplet(
         display_name = sp.get("displayName")
         if _is_blank(display_name):
             warnings.append(
-                f"skipping grant {index} in {grants_path!r}: "
+                f"skipping grant {index} in '{grants_path}': "
                 f"servicePrincipal {client_object_id!r} has a missing/blank displayName"
             )
             continue
@@ -416,15 +416,15 @@ def parse_entra_triplet(
         user = users_by_id.get(principal_id)
         if user is None:
             warnings.append(
-                f"skipping grant {index} in {grants_path!r}: "
-                f"principalId {principal_id!r} not found in {users_path!r}"
+                f"skipping grant {index} in '{grants_path}': "
+                f"principalId {principal_id!r} not found in '{users_path}'"
             )
             continue
 
         upn = user.get("userPrincipalName")
         if _is_blank(upn):
             warnings.append(
-                f"skipping grant {index} in {grants_path!r}: "
+                f"skipping grant {index} in '{grants_path}': "
                 f"user {principal_id!r} has a missing/blank userPrincipalName"
             )
             continue
@@ -456,17 +456,17 @@ def parse_google_users_csv(path: str) -> int:
     try:
         fh = open(path, "r", encoding="utf-8", newline="")
     except OSError as exc:
-        raise ExportError(f"cannot open users CSV {path!r}: {exc}") from exc
+        raise ExportError(f"cannot open users CSV '{path}': {exc}") from exc
 
     with fh:
         reader = csv.DictReader(fh)
         if reader.fieldnames is None:
-            raise ExportError(f"users CSV {path!r} has no header row")
+            raise ExportError(f"users CSV '{path}' has no header row")
 
         missing = [c for c in GOOGLE_USERS_REQUIRED_COLUMNS if c not in reader.fieldnames]
         if missing:
             raise ExportError(
-                f"users CSV {path!r} is missing required column(s): {', '.join(missing)}"
+                f"users CSV '{path}' is missing required column(s): {', '.join(missing)}"
             )
 
         emails = {normalize_email(row["email"]) for row in reader if row.get("email")}
@@ -485,9 +485,9 @@ def load_or_generate_salt(salt_file: Optional[str]) -> bytes:
                 salt_hex = fh.read().strip()
             return bytes.fromhex(salt_hex)
         except OSError as exc:
-            raise ExportError(f"cannot open salt file {salt_file!r}: {exc}") from exc
+            raise ExportError(f"cannot open salt file '{salt_file}': {exc}") from exc
         except ValueError as exc:
-            raise ExportError(f"salt file {salt_file!r} does not contain valid hex: {exc}") from exc
+            raise ExportError(f"salt file '{salt_file}' does not contain valid hex: {exc}") from exc
     return secrets.token_bytes(32)
 
 
