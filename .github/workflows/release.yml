@@ -1,12 +1,16 @@
 name: release
 
-# Tagged releases (v*) only, gated on all three CI workflows already
-# having gone green on this commit -- see the epic's success criterion:
-# "Both scripts produce byte-identical DEF output ... in noblecloak-tools
-# CI" must hold before a release ships. No code-signing (out of scope for
-# this epic); integrity is SHA-256 checksums published in the release
-# notes and as a sidecar file, so a consumer (e.g. bianoble-discover) can
-# verify what they pinned against.
+# Tagged releases (v*) only, gated on all three CI workflows (ci-python,
+# ci-powershell, ci-parity) having actually gone green on this exact
+# commit -- see the epic's success criterion: "Both scripts produce
+# byte-identical DEF output ... in noblecloak-tools CI" must hold before
+# a release ships. The "Verify required CI workflows succeeded" step
+# below is what enforces this: it queries the GitHub Actions API for each
+# required workflow's most recent run against this commit's SHA and fails
+# the release job unless all three concluded "success". No code-signing
+# (out of scope for this epic); integrity is SHA-256 checksums published
+# in the release notes and as a sidecar file, so a consumer (e.g.
+# bianoble-discover) can verify what they pinned against.
 
 on:
   push:
@@ -15,12 +19,30 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify required CI workflows succeeded for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for wf in ci-python ci-powershell ci-parity; do
+            conclusion=$(gh api "repos/${REPO}/actions/workflows/${wf}.yml/runs?head_sha=${SHA}&per_page=1" \
+              --jq '.workflow_runs[0].conclusion // "missing"')
+            echo "workflow '${wf}.yml' @ ${SHA} -> ${conclusion}"
+            if [ "$conclusion" != "success" ]; then
+              echo "::error::Required workflow '${wf}.yml' has not succeeded for commit ${SHA} (conclusion: ${conclusion}) -- refusing to release"
+              exit 1
+            fi
+          done
 
       - name: Compute SHA-256 checksums
         id: checksums
