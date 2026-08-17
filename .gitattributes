@@ -1,0 +1,5 @@
+# Golden-fixture parity is compared as raw bytes; line-ending conversion at
+# checkout (git autocrlf on Windows) corrupts them. Keep everything LF and
+# treat fixtures as byte-exact.
+* text=auto eol=lf
+fixtures/** -text
