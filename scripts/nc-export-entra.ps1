@@ -153,6 +153,38 @@ function ConvertFrom-JsonElement {
     }
 }
 
+function ConvertTo-NormalizedGraphObject {
+    <#
+    Converges the Microsoft.Graph PowerShell SDK's Invoke-MgGraphRequest
+    return shape onto the exact same PSCustomObject-with-ordered-properties
+    shape ConvertFrom-JsonElement produces for file mode. Invoke-MgGraphRequest
+    hands back nested Hashtable/IDictionary objects (not PSCustomObjects) --
+    under Set-StrictMode, Get-PropertyOrNull's existence check
+    ($Object.PSObject.Properties.Name -contains $Name) is always false for a
+    Hashtable (dictionary keys are not adapted PSObject properties), so
+    every property read of raw live-mode data silently collapsed to $null.
+    Normalizing each page here, immediately after the Graph call, means
+    Resolve-EntraGrants / Resolve-AppRoleAssignments / Get-PropertyOrNull /
+    Get-GraphNextLink downstream only ever see ONE canonical shape
+    regardless of which mode produced it -- there is no second,
+    hashtable-aware code path to keep in sync.
+    #>
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return $Value }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $obj = [ordered]@{}
+        foreach ($key in $Value.Keys) { $obj[[string]$key] = ConvertTo-NormalizedGraphObject $Value[$key] }
+        return [pscustomobject]$obj
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $items = foreach ($item in $Value) { ConvertTo-NormalizedGraphObject $item }
+        # Comma-protected -- see the note on Sort-StringsOrdinal below.
+        return ,@($items)
+    }
+    return $Value
+}
+
 function Read-EntraJsonFile {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -593,7 +625,7 @@ function Get-EntraLiveExport {
     $users = @()
     $usersUri = 'https://graph.microsoft.com/v1.0/users?$select=id,userPrincipalName,displayName&$top=999'
     while ($usersUri) {
-        $page = Invoke-MgGraphRequest -Method GET -Uri $usersUri
+        $page = ConvertTo-NormalizedGraphObject (Invoke-MgGraphRequest -Method GET -Uri $usersUri)
         $users += @($page.value)
         $usersUri = Get-GraphNextLink -Page $page
     }
@@ -601,7 +633,7 @@ function Get-EntraLiveExport {
     $servicePrincipals = @()
     $spUri = 'https://graph.microsoft.com/v1.0/servicePrincipals?$select=id,appId,displayName,appRoles&$top=999'
     while ($spUri) {
-        $page = Invoke-MgGraphRequest -Method GET -Uri $spUri
+        $page = ConvertTo-NormalizedGraphObject (Invoke-MgGraphRequest -Method GET -Uri $spUri)
         $servicePrincipals += @($page.value)
         $spUri = Get-GraphNextLink -Page $page
     }
@@ -609,7 +641,7 @@ function Get-EntraLiveExport {
     $grants = @()
     $grantsUri = 'https://graph.microsoft.com/v1.0/oauth2PermissionGrants?$top=999'
     while ($grantsUri) {
-        $page = Invoke-MgGraphRequest -Method GET -Uri $grantsUri
+        $page = ConvertTo-NormalizedGraphObject (Invoke-MgGraphRequest -Method GET -Uri $grantsUri)
         $grants += @($page.value)
         $grantsUri = Get-GraphNextLink -Page $page
     }
@@ -631,7 +663,7 @@ function Get-EntraLiveExport {
         if (-not (Test-NonBlankString $spId)) { continue }
         $arUri = "https://graph.microsoft.com/v1.0/servicePrincipals/$spId/appRoleAssignedTo?`$top=999"
         while ($arUri) {
-            $page = Invoke-MgGraphRequest -Method GET -Uri $arUri
+            $page = ConvertTo-NormalizedGraphObject (Invoke-MgGraphRequest -Method GET -Uri $arUri)
             foreach ($assignment in @($page.value)) {
                 $principalType = Get-PropertyOrNull $assignment 'principalType'
                 if ($principalType -eq 'User') { $appRoleAssignments.Add($assignment) }

@@ -174,3 +174,108 @@ Describe 'nc-export-entra.ps1 live mode app role assignments' {
         }
     }
 }
+
+Describe 'nc-export-entra.ps1 live mode against the real Microsoft.Graph SDK data shape' {
+    It 'produces correct, non-empty output when Invoke-MgGraphRequest returns Hashtables (not PSCustomObjects)' {
+        # Regression coverage: the Microsoft.Graph PowerShell SDK's
+        # Invoke-MgGraphRequest returns nested Hashtable/array structures,
+        # NOT PSCustomObjects. Get-PropertyOrNull's existence check
+        # ($Object.PSObject.Properties.Name -contains $Name) is true for a
+        # PSCustomObject's real properties but is ALWAYS FALSE for a
+        # Hashtable (dictionary keys aren't adapted PSObject properties),
+        # so under Set-StrictMode every property read of live-mode data
+        # silently collapsed to $null -- exit 0, empty/wrong output, no
+        # crash. This test mocks Invoke-MgGraphRequest with the SDK's real
+        # Hashtable shape (including nested hashtables/arrays, paging via
+        # @odata.nextLink, a missing key, and an explicit $null value) and
+        # asserts live mode still produces correct, non-empty output
+        # across all four Graph paths (users, servicePrincipals,
+        # oauth2PermissionGrants, appRoleAssignedTo).
+        Mock Connect-MgGraph { }
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            if ($Uri -like '*servicePrincipals/sp1/appRoleAssignedTo*') {
+                return @{
+                    value = @(
+                        @{ id = 'ara1'; principalId = 'u1'; resourceId = 'sp1'; appRoleId = 'role-guid'; createdDateTime = '2026-04-01T00:00:00Z'; principalType = 'User' }
+                    )
+                }
+            } elseif ($Uri -like '*appRoleAssignedTo*') {
+                # sp2's appRoleAssignedTo call -- none for this resource.
+                return @{ value = @() }
+            } elseif ($Uri -like '*/users*' -and $Uri -notlike '*skiptoken=page2*') {
+                # Page 1 of /users -- has an @odata.nextLink, so live mode
+                # must follow it to see u2 on page 2.
+                return @{
+                    value          = @(
+                        @{ id = 'u1'; userPrincipalName = 'alice@contoso.com'; displayName = 'Alice' }
+                    )
+                    '@odata.nextLink' = 'https://graph.microsoft.com/v1.0/users?$skiptoken=page2'
+                }
+            } elseif ($Uri -like '*skiptoken=page2*') {
+                # Page 2 (final page, no nextLink key at all) -- u2 has an
+                # explicit $null userPrincipalName (present key, null value).
+                return @{
+                    value = @(
+                        @{ id = 'u2'; userPrincipalName = $null; displayName = 'Bob (blank UPN)' }
+                    )
+                }
+            } elseif ($Uri -like '*servicePrincipals*') {
+                return @{
+                    value = @(
+                        @{ id = 'sp1'; appId = 'aaaa1111-aaaa-1111-aaaa-111111111111'; displayName = 'Slack'; appRoles = @(
+                                @{ id = 'role-guid'; value = 'Reader' }
+                            )
+                        },
+                        # sp2 has no 'displayName' key at all (missing key,
+                        # not just a blank value).
+                        @{ id = 'sp2'; appId = 'bbbb2222-bbbb-2222-bbbb-222222222222' }
+                    )
+                }
+            } else {
+                # /oauth2PermissionGrants
+                return @{
+                    value = @(
+                        @{ id = 'g1'; clientId = 'sp1'; principalId = 'u1'; consentType = 'Principal'; scope = 'User.Read Mail.Read'; createdDateTime = '2026-01-10T00:00:00Z' },
+                        @{ id = 'g2'; clientId = 'sp2'; principalId = 'u1'; consentType = 'Principal'; scope = 'Files.Read'; createdDateTime = '2026-01-11T00:00:00Z' },
+                        @{ id = 'g3'; clientId = 'sp1'; principalId = 'u2'; consentType = 'Principal'; scope = 'Calendars.Read'; createdDateTime = '2026-01-12T00:00:00Z' }
+                    )
+                }
+            }
+        }
+
+        $outDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+        $warnFile = [System.IO.Path]::GetTempFileName()
+        try {
+            $code = Start-NcExportEntra -OutDir $outDir -SaltFile (Join-Path $script:RepoRoot 'fixtures' 'entra' 'scenario-basic' 'salt.txt') -GeneratedAt '2026-08-17T00:00:00Z' 3> $warnFile
+            $code | Should -Be 0
+
+            $lines = Get-Content -LiteralPath (Join-Path $outDir 'discover-export.ndjson')
+            $header = $lines[0] | ConvertFrom-Json
+            # Paging via @odata.nextLink must have been followed: 2 users
+            # total across both pages, not just page 1's 1 user.
+            $header.userCountTotal | Should -Be 2
+
+            # g1 (sp1/u1) is the only grant with every required field
+            # present: g2's servicePrincipal (sp2) is missing displayName
+            # entirely, g3's user (u2) has an explicit $null UPN. Both must
+            # be skipped with a warning, not silently dropped everything
+            # (the pre-fix bug) or thrown (a StrictMode crash).
+            $lines.Count | Should -Be 2
+            $grant = $lines[1] | ConvertFrom-Json
+            $grant.clientId | Should -Be 'aaaa1111-aaaa-1111-aaaa-111111111111'
+            $grant.appDisplayName | Should -Be 'Slack'
+            # oauth2PermissionGrants scopes (User.Read, Mail.Read) merged
+            # with the appRoleAssignedTo-derived scope (appRole:Reader) via
+            # the same dedupe path (same email + clientId).
+            (@($grant.scopes) | Sort-Object) | Should -Be @('appRole:Reader', 'Mail.Read', 'User.Read')
+
+            $warnings = Get-Content -LiteralPath $warnFile -Raw
+            $warnings | Should -Match "servicePrincipal 'sp2' has a missing/blank displayName"
+            $warnings | Should -Match "user 'u2' has a missing/blank userPrincipalName"
+        } finally {
+            if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+            if (Test-Path $warnFile) { Remove-Item -Force $warnFile }
+        }
+    }
+}
