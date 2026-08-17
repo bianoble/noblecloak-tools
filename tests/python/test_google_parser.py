@@ -111,6 +111,65 @@ class TestGoogleParser(unittest.TestCase):
         lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 2)  # header + 1 valid grant
 
+    def test_row_with_whitespace_only_actor_email_is_skipped_with_warning(self):
+        audit = self._audit(
+            "2026-01-05T10:00:00Z,   ,111-aaa.apps.googleusercontent.com,Slack,"
+            "https://www.googleapis.com/auth/drive.readonly\n"
+        )
+        result = run(
+            [
+                "google",
+                "--audit-csv", str(audit),
+                "--out-dir", str(self.out_dir),
+                "--salt-file", str(self.salt_file),
+            ],
+            cwd=self.tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)  # header only, row skipped
+        header = json.loads(lines[0])
+        self.assertEqual(header["skippedRows"], 1)
+
+    def test_row_with_whitespace_only_client_id_is_skipped_with_warning(self):
+        audit = self._audit(
+            "2026-01-05T10:00:00Z,alice@example.com,   ,Slack,"
+            "https://www.googleapis.com/auth/drive.readonly\n"
+        )
+        result = run(
+            [
+                "google",
+                "--audit-csv", str(audit),
+                "--out-dir", str(self.out_dir),
+                "--salt-file", str(self.salt_file),
+            ],
+            cwd=self.tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_row_with_whitespace_only_display_text_is_skipped_with_warning(self):
+        audit = self._audit(
+            "2026-01-05T10:00:00Z,alice@example.com,111-aaa.apps.googleusercontent.com,   ,"
+            "https://www.googleapis.com/auth/drive.readonly\n"
+        )
+        result = run(
+            [
+                "google",
+                "--audit-csv", str(audit),
+                "--out-dir", str(self.out_dir),
+                "--salt-file", str(self.salt_file),
+            ],
+            cwd=self.tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
     def test_row_with_empty_scopes_value_is_kept_with_empty_scopes_array(self):
         # spec/discover-export-format-v1.md: grant.scopes "May be empty."
         # A genuinely empty scopes cell is valid input, not a malformed

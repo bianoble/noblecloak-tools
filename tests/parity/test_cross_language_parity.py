@@ -9,6 +9,7 @@ tests/powershell/NcExportEntra.Tests.ps1); this test additionally checks
 the two implementations against *each other*, which is a strictly
 stronger guarantee than each matching golden separately.
 """
+import os
 import pathlib
 import shutil
 import subprocess
@@ -22,9 +23,26 @@ NC_EXPORT_ENTRA_PS1 = REPO_ROOT / "scripts" / "nc-export-entra.ps1"
 FIXTURES_ROOT = REPO_ROOT / "fixtures" / "entra"
 GOLDEN_GENERATED_AT = "2026-08-17T00:00:00Z"
 
-SCENARIOS = ["scenario-basic", "scenario-duplicate-grants", "scenario-unicode-appnames", "scenario-no-firstseen"]
+SCENARIOS = [
+    "scenario-basic",
+    "scenario-duplicate-grants",
+    "scenario-unicode-appnames",
+    "scenario-no-firstseen",
+    "scenario-fractional-seconds",
+    "scenario-blank-identity-fields",
+    "scenario-allprincipals-grant",
+    "scenario-app-role-assignments",
+]
 
 PWSH = shutil.which("pwsh")
+
+# GitHub Actions (and most other CI systems) set CI=true automatically.
+# ci-parity.yml also has its own preflight step that fails loudly if pwsh
+# is entirely missing from the runner image; this is the second layer --
+# it means a code path that would otherwise silently skip the PowerShell
+# side of the parity check (e.g. an environment where 'pwsh' resolves but
+# something about invoking it fails) cannot quietly report green in CI.
+_IN_CI = bool(os.environ.get("CI"))
 
 
 def run_python(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> subprocess.CompletedProcess:
@@ -38,6 +56,9 @@ def run_python(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> subprocess.
         "--salt-file", str(scenario_dir / "salt.txt"),
         "--generated-at", GOLDEN_GENERATED_AT,
     ]
+    app_role_assignments = input_dir / "appRoleAssignments.json"
+    if app_role_assignments.is_file():
+        args += ["--app-role-assignments-json", str(app_role_assignments)]
     return subprocess.run(args, capture_output=True, text=True)
 
 
@@ -52,11 +73,23 @@ def run_powershell(scenario_dir: pathlib.Path, out_dir: pathlib.Path) -> subproc
         "-SaltFile", str(scenario_dir / "salt.txt"),
         "-GeneratedAt", GOLDEN_GENERATED_AT,
     ]
+    app_role_assignments = input_dir / "appRoleAssignments.json"
+    if app_role_assignments.is_file():
+        args += ["-AppRoleAssignmentsJson", str(app_role_assignments)]
     return subprocess.run(args, capture_output=True, text=True)
 
 
-@unittest.skipIf(PWSH is None, "pwsh not found on PATH; cannot run the PowerShell side of the parity check")
 class TestCrossLanguageParity(unittest.TestCase):
+    def setUp(self):
+        if PWSH is None:
+            if _IN_CI:
+                self.fail(
+                    "pwsh not found on PATH -- the cross-language parity check cannot be "
+                    "skipped in CI (see ci-parity.yml's preflight step, which should have "
+                    "already caught this)"
+                )
+            self.skipTest("pwsh not found on PATH; cannot run the PowerShell side of the parity check")
+
     def test_python_and_powershell_produce_byte_identical_output(self):
         for scenario in SCENARIOS:
             scenario_dir = FIXTURES_ROOT / scenario

@@ -23,6 +23,7 @@ COMMON_SCENARIOS = {
     "scenario-duplicate-grants",
     "scenario-unicode-appnames",
     "scenario-empty-grants",
+    "scenario-blank-identity-fields",
 }
 
 NO_PSEUDONYMIZE_SCENARIO = "scenario-no-pseudonymize"

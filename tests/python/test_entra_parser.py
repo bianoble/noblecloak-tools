@@ -1,4 +1,5 @@
 """CLI-level tests for `nc-export.py entra` file mode (T1 task 5)."""
+import csv
 import json
 import pathlib
 import subprocess
@@ -49,6 +50,9 @@ class TestEntraParser(unittest.TestCase):
         if extra_args:
             args += extra_args
         return run(args, cwd=self.tmp)
+
+    def _run_entra_with_app_roles(self, app_role_assignments_path):
+        return self._run_entra(["--app-role-assignments-json", str(app_role_assignments_path)])
 
     def test_valid_triplet_resolves_appid_and_splits_scopes(self):
         write_json(self.users_path, {"value": [
@@ -182,6 +186,379 @@ class TestEntraParser(unittest.TestCase):
         raw = (self.out_dir / "discover-export.ndjson").read_bytes()
         self.assertIn(name.encode("utf-8"), raw)
         self.assertNotIn(b"\\u", raw)
+
+    def test_grant_referencing_user_with_missing_upn_key_is_skipped_with_warning(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1"},  # userPrincipalName key entirely absent
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)  # header only, grant skipped
+        header = json.loads(lines[0])
+        self.assertEqual(header["skippedRows"], 1)
+
+    def test_grant_referencing_user_with_explicit_null_upn_is_skipped_with_warning(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": None},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_user_with_whitespace_only_upn_is_skipped_with_warning(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "   "},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_missing_appid_key_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "displayName": "Slack"},  # appId key entirely absent
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_null_appid_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": None, "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_whitespace_only_appid_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "   ", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_missing_displayname_key_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111"},  # displayName key absent
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_null_displayname_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": None},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_grant_referencing_service_principal_with_whitespace_only_displayname_is_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "   "},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
+    def test_no_blank_identity_field_ever_produces_empty_string_user_ref(self):
+        # Regression guard for the identity-collision bug: a missing/null
+        # userPrincipalName must never fall through to "" and get hashed
+        # (or passed through raw) as a userRef -- the row must be skipped
+        # instead. Mix a blank-UPN user with a valid one on the same
+        # clientId so a collision would be visible if it happened.
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+            {"id": "u2"},  # missing UPN key
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+            {"id": "g2", "clientId": "sp1", "principalId": "u2", "resourceId": "r1",
+             "scope": "Mail.Read", "createdDateTime": "2026-01-11T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        header = json.loads(lines[0])
+        self.assertEqual(header["skippedRows"], 1)
+        self.assertEqual(len(lines), 2)  # header + only alice's grant
+        grant = json.loads(lines[1])
+        self.assertEqual(grant["scopes"], ["User.Read"])  # not merged with u2's Mail.Read
+        self.assertNotEqual(grant["userRef"], "")
+
+    def test_truncated_users_json_errors_naming_file_no_partial_output(self):
+        self.users_path.write_text('{"value": [', encoding="utf-8")  # truncated
+        write_json(self.sps_path, {"value": []})
+        write_json(self.grants_path, {"value": []})
+        result = self._run_entra()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(str(self.users_path), result.stderr)
+        self.assertFalse(self.out_dir.exists())
+
+    def test_truncated_service_principals_json_errors_naming_file_no_partial_output(self):
+        write_json(self.users_path, {"value": []})
+        self.sps_path.write_text('{"value": [', encoding="utf-8")  # truncated
+        write_json(self.grants_path, {"value": []})
+        result = self._run_entra()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(str(self.sps_path), result.stderr)
+        self.assertFalse(self.out_dir.exists())
+
+    def test_allprincipals_grant_emitted_with_null_user_ref_not_skipped(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "unrelated@contoso.com", "displayName": "Unrelated"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": None, "resourceId": "r1",
+             "consentType": "AllPrincipals", "scope": "User.Read Mail.Read",
+             "createdDateTime": "2026-02-15T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("skipping", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)  # header + 1 grant, not skipped
+        header = json.loads(lines[0])
+        self.assertEqual(header["skippedRows"], 0)
+        grant = json.loads(lines[1])
+        self.assertIsNone(grant["userRef"])
+        self.assertEqual(grant["consentType"], "AllPrincipals")
+        self.assertEqual(grant["scopes"], ["Mail.Read", "User.Read"])
+
+    def test_allprincipals_grant_not_written_to_mapping_csv(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+            {"id": "sp2", "appId": "bbbb2222-bbbb-2222-bbbb-222222222222", "displayName": "Zoom"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+            {"id": "g2", "clientId": "sp2", "principalId": None, "resourceId": "r1",
+             "consentType": "AllPrincipals", "scope": "User.Read", "createdDateTime": "2026-02-15T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        with (self.out_dir / "mapping.csv").open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        self.assertEqual(len(rows), 1)  # only alice, not the AllPrincipals row
+        self.assertEqual(rows[0]["email"], "alice@contoso.com")
+
+    def test_ordinary_grant_has_principal_consent_type(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        grant = json.loads(
+            (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()[1]
+        )
+        self.assertEqual(grant["consentType"], "Principal")
+        self.assertIsNotNone(grant["userRef"])
+
+    def test_app_role_assignment_is_absent_by_default_backward_compatible(self):
+        # Omitting --app-role-assignments-json must behave exactly as
+        # before it existed -- no error, no behavior change.
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "alice@contoso.com", "displayName": "Alice"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Slack"},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "User.Read", "createdDateTime": "2026-01-10T00:00:00Z"},
+        ]})
+        result = self._run_entra()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+
+    def test_app_role_assignment_becomes_a_grant_with_approle_scope(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "grace@contoso.com", "displayName": "Grace"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Notion",
+             "appRoles": [{"id": "role-guid-1", "value": "Reader"}]},
+        ]})
+        write_json(self.grants_path, {"value": []})
+        app_roles_path = self.tmp / "appRoleAssignments.json"
+        write_json(app_roles_path, {"value": [
+            {"id": "ara1", "principalId": "u1", "resourceId": "sp1", "appRoleId": "role-guid-1",
+             "createdDateTime": "2026-03-01T00:00:00Z", "principalType": "User"},
+        ]})
+        result = self._run_entra_with_app_roles(app_roles_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+        grant = json.loads(lines[1])
+        self.assertEqual(grant["clientId"], "aaaa1111-aaaa-1111-aaaa-111111111111")
+        self.assertEqual(grant["scopes"], ["appRole:Reader"])
+        self.assertEqual(grant["firstSeen"], "2026-03-01T00:00:00Z")
+        self.assertIsNone(grant["lastUsed"])
+
+    def test_app_role_assignment_falls_back_to_guid_when_role_not_resolvable(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "grace@contoso.com", "displayName": "Grace"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Notion"},
+        ]})
+        write_json(self.grants_path, {"value": []})
+        app_roles_path = self.tmp / "appRoleAssignments.json"
+        write_json(app_roles_path, {"value": [
+            {"id": "ara1", "principalId": "u1", "resourceId": "sp1",
+             "appRoleId": "99999999-9999-9999-9999-999999999999",
+             "createdDateTime": "2026-03-01T00:00:00Z", "principalType": "User"},
+        ]})
+        result = self._run_entra_with_app_roles(app_roles_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        grant = json.loads(
+            (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()[1]
+        )
+        self.assertEqual(grant["scopes"], ["appRole:99999999-9999-9999-9999-999999999999"])
+
+    def test_app_role_assignment_merges_with_existing_oauth_grant_same_user_and_client(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "grace@contoso.com", "displayName": "Grace"},
+        ]})
+        write_json(self.sps_path, {"value": [
+            {"id": "sp1", "appId": "aaaa1111-aaaa-1111-aaaa-111111111111", "displayName": "Notion",
+             "appRoles": [{"id": "role-guid-1", "value": "Reader"}]},
+        ]})
+        write_json(self.grants_path, {"value": [
+            {"id": "g1", "clientId": "sp1", "principalId": "u1", "resourceId": "r1",
+             "scope": "Files.Read", "createdDateTime": "2026-02-20T00:00:00Z"},
+        ]})
+        app_roles_path = self.tmp / "appRoleAssignments.json"
+        write_json(app_roles_path, {"value": [
+            {"id": "ara1", "principalId": "u1", "resourceId": "sp1", "appRoleId": "role-guid-1",
+             "createdDateTime": "2026-03-01T00:00:00Z", "principalType": "User"},
+        ]})
+        result = self._run_entra_with_app_roles(app_roles_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)  # merged into ONE grant, not two
+        grant = json.loads(lines[1])
+        self.assertEqual(grant["scopes"], ["Files.Read", "appRole:Reader"])
+        self.assertEqual(grant["firstSeen"], "2026-02-20T00:00:00Z")  # min of the two
+
+    def test_app_role_assignment_referencing_unknown_resource_is_skipped_with_warning(self):
+        write_json(self.users_path, {"value": [
+            {"id": "u1", "userPrincipalName": "grace@contoso.com", "displayName": "Grace"},
+        ]})
+        write_json(self.sps_path, {"value": []})
+        write_json(self.grants_path, {"value": []})
+        app_roles_path = self.tmp / "appRoleAssignments.json"
+        write_json(app_roles_path, {"value": [
+            {"id": "ara1", "principalId": "u1", "resourceId": "sp-unknown", "appRoleId": "role-guid-1",
+             "createdDateTime": "2026-03-01T00:00:00Z", "principalType": "User"},
+        ]})
+        result = self._run_entra_with_app_roles(app_roles_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("warning", result.stderr.lower())
+        lines = (self.out_dir / "discover-export.ndjson").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        header = json.loads(lines[0])
+        self.assertEqual(header["skippedRows"], 1)
 
     def test_empty_grants_array_gives_header_only_output_with_user_count(self):
         write_json(self.users_path, {"value": [

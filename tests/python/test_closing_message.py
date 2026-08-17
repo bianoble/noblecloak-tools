@@ -108,6 +108,51 @@ class TestClosingMessage(unittest.TestCase):
         for phrase in REQUIRED_PHRASES:
             self.assertIn(phrase, stdout_lower, f"missing {phrase!r} in stdout: {result.stdout!r}")
 
+    def test_skipped_rows_summary_line_printed_even_when_zero(self):
+        # Brief item #3: both scripts print a loud "Skipped rows: N"
+        # summary line to stdout, even when N is 0, immediately before the
+        # closing message.
+        audit = self.tmp / "audit.csv"
+        write(
+            audit,
+            AUDIT_HEADER
+            + "2026-01-05T10:00:00Z,alice@example.com,111-aaa.apps.googleusercontent.com,Slack,"
+            "https://www.googleapis.com/auth/drive.readonly\n",
+        )
+        result = run(
+            [
+                "google",
+                "--audit-csv", str(audit),
+                "--out-dir", str(self.out_dir),
+                "--salt-file", str(self.salt_file),
+            ],
+            cwd=self.tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Skipped rows: 0", result.stdout)
+
+    def test_skipped_rows_summary_line_reflects_actual_skip_count(self):
+        audit = self.tmp / "audit.csv"
+        write(
+            audit,
+            AUDIT_HEADER
+            + "2026-01-05T10:00:00Z,,111-aaa.apps.googleusercontent.com,Slack,"
+            "https://www.googleapis.com/auth/drive.readonly\n"
+            "2026-02-10T09:30:00Z,bob@example.com,222-bbb.apps.googleusercontent.com,Zoom,"
+            "https://www.googleapis.com/auth/calendar.readonly\n",
+        )
+        result = run(
+            [
+                "google",
+                "--audit-csv", str(audit),
+                "--out-dir", str(self.out_dir),
+                "--salt-file", str(self.salt_file),
+            ],
+            cwd=self.tmp,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Skipped rows: 1", result.stdout)
+
     def test_error_path_does_not_print_closing_message(self):
         path = self.tmp / "audit.csv"
         write(path, "time,actorEmail,clientId,displayText\nfoo,bar,baz,qux\n")  # missing "scopes"

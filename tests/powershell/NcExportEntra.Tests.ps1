@@ -38,6 +38,10 @@ BeforeAll {
             OutDir                 = $OutDir
             GeneratedAt            = $script:GoldenGeneratedAt
         }
+        $appRoleAssignmentsPath = Join-Path $inputDir 'appRoleAssignments.json'
+        if (Test-Path -LiteralPath $appRoleAssignmentsPath -PathType Leaf) {
+            $params['AppRoleAssignmentsJson'] = $appRoleAssignmentsPath
+        }
         if ($NoPseudonymize) {
             $params['NoPseudonymize'] = $true
         } else {
@@ -127,6 +131,105 @@ Describe 'nc-export-entra.ps1 grant with no scope property' {
     }
 }
 
+Describe 'nc-export-entra.ps1 blank/missing/null identity fields' {
+    BeforeAll {
+        function New-BlankFieldScenario {
+            <# Builds a users/servicePrincipals/oauth2PermissionGrants triplet
+               with exactly one grant whose referenced user or service
+               principal has the given field mutated to $Missing (key
+               entirely absent), $null (explicit JSON null), or whitespace. #>
+            param([string]$TmpDir, [string]$Field, [string]$Mode)
+
+            $user = [ordered]@{ id = 'u1'; userPrincipalName = 'ivy@contoso.com'; displayName = 'Ivy' }
+            $sp = [ordered]@{ id = 'sp1'; appId = 'aaaa1111-aaaa-1111-aaaa-111111111111'; displayName = 'Slack' }
+
+            switch ($Mode) {
+                'missing' { $target = if ($Field -eq 'userPrincipalName') { $user } else { $sp }; $target.Remove($Field) }
+                'null'    { $target = if ($Field -eq 'userPrincipalName') { $user } else { $sp }; $target[$Field] = $null }
+                'blank'   { $target = if ($Field -eq 'userPrincipalName') { $user } else { $sp }; $target[$Field] = '   ' }
+            }
+
+            $usersPath = Join-Path $TmpDir 'users.json'
+            $spsPath = Join-Path $TmpDir 'servicePrincipals.json'
+            $grantsPath = Join-Path $TmpDir 'oauth2PermissionGrants.json'
+            @{ value = @($user) } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $usersPath
+            @{ value = @($sp) } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $spsPath
+            @{ value = @(@{ id = 'g1'; clientId = 'sp1'; principalId = 'u1'; resourceId = 'r1'; scope = 'User.Read'; createdDateTime = '2026-01-10T00:00:00Z' }) } |
+                ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $grantsPath
+
+            return @{ UsersPath = $usersPath; ServicePrincipalsPath = $spsPath; GrantsPath = $grantsPath }
+        }
+    }
+
+    It 'skips (no crash under StrictMode) for <_.Field>/<_.Mode>' -ForEach @(
+        @{ Field = 'userPrincipalName'; Mode = 'missing' }
+        @{ Field = 'userPrincipalName'; Mode = 'null' }
+        @{ Field = 'userPrincipalName'; Mode = 'blank' }
+        @{ Field = 'appId'; Mode = 'missing' }
+        @{ Field = 'appId'; Mode = 'null' }
+        @{ Field = 'appId'; Mode = 'blank' }
+        @{ Field = 'displayName'; Mode = 'missing' }
+        @{ Field = 'displayName'; Mode = 'null' }
+        @{ Field = 'displayName'; Mode = 'blank' }
+    ) {
+        $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $tmpDir | Out-Null
+        try {
+            $paths = New-BlankFieldScenario -TmpDir $tmpDir -Field $Field -Mode $Mode
+            $outDir = Join-Path $tmpDir 'out'
+            $code = Start-NcExportEntra -UsersJson $paths.UsersPath -ServicePrincipalsJson $paths.ServicePrincipalsPath `
+                -GrantsJson $paths.GrantsPath -OutDir $outDir `
+                -SaltFile (Join-Path $script:FixturesRoot 'scenario-basic' 'salt.txt') -GeneratedAt $script:GoldenGeneratedAt
+            $code | Should -Be 0
+
+            $lines = @(Get-Content -LiteralPath (Join-Path $outDir 'discover-export.ndjson'))
+            $lines.Count | Should -Be 1  # header only -- the one grant was skipped
+            $header = $lines[0] | ConvertFrom-Json
+            $header.skippedRows | Should -Be 1
+        } finally {
+            if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+        }
+    }
+}
+
+Describe 'nc-export-entra.ps1 AllPrincipals grants' {
+    It 'emits an AllPrincipals grant with null userRef, not skipped, not counted in skippedRows, not in mapping.csv' {
+        $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $tmpDir | Out-Null
+        try {
+            $usersPath = Join-Path $tmpDir 'users.json'
+            $spsPath = Join-Path $tmpDir 'servicePrincipals.json'
+            $grantsPath = Join-Path $tmpDir 'oauth2PermissionGrants.json'
+            $outDir = Join-Path $tmpDir 'out'
+
+            @{ value = @(@{ id = 'u1'; userPrincipalName = 'jack@contoso.com'; displayName = 'Jack' }) } |
+                ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $usersPath
+            @{ value = @(@{ id = 'sp1'; appId = 'bbbb2222-bbbb-2222-bbbb-222222222222'; displayName = 'Zoom' }) } |
+                ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $spsPath
+            @{ value = @(@{ id = 'g1'; clientId = 'sp1'; principalId = $null; resourceId = 'r1'; consentType = 'AllPrincipals'; scope = 'User.Read'; createdDateTime = '2026-02-15T00:00:00Z' }) } |
+                ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $grantsPath
+
+            $code = Start-NcExportEntra -UsersJson $usersPath -ServicePrincipalsJson $spsPath -GrantsJson $grantsPath `
+                -OutDir $outDir -SaltFile (Join-Path $script:FixturesRoot 'scenario-basic' 'salt.txt') `
+                -GeneratedAt $script:GoldenGeneratedAt
+            $code | Should -Be 0
+
+            $lines = @(Get-Content -LiteralPath (Join-Path $outDir 'discover-export.ndjson'))
+            $lines.Count | Should -Be 2
+            $header = $lines[0] | ConvertFrom-Json
+            $header.skippedRows | Should -Be 0
+            $grant = $lines[1] | ConvertFrom-Json
+            $grant.userRef | Should -Be $null
+            $grant.consentType | Should -Be 'AllPrincipals'
+
+            $mapping = @(Get-Content -LiteralPath (Join-Path $outDir 'mapping.csv'))
+            $mapping.Count | Should -Be 1  # header row only, no data row
+        } finally {
+            if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
+        }
+    }
+}
+
 Describe 'nc-export-entra.ps1 closing message' {
     It 'prints the "nothing has been sent anywhere" closing message to stdout on a successful run' {
         # Brief item #4: "Same pseudonymization, same three output files,
@@ -149,6 +252,7 @@ Describe 'nc-export-entra.ps1 closing message' {
             $stdout | Should -Match 'nothing has been sent anywhere'
             $stdout | Should -Match 'review discover-export\.ndjson'
             $stdout | Should -Match 'upload it in the discover app'
+            $stdout | Should -Match 'skipped rows: 0'
         } finally {
             if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
         }

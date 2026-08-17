@@ -20,6 +20,11 @@ BeforeAll {
 
     function Connect-MgGraph { param([string[]]$Scopes, [switch]$NoWelcome) }
     function Invoke-MgGraphRequest { param([string]$Method, [string]$Uri) }
+    function Get-MgContext { }
+
+    # Default: fully consented. Individual tests override with their own
+    # Mock Get-MgContext for the missing-scope case.
+    Mock Get-MgContext { return [pscustomobject]@{ Scopes = @('User.Read.All', 'Application.Read.All', 'Directory.Read.All') } }
 }
 
 Describe 'nc-export-entra.ps1 live mode scopes' {
@@ -34,6 +39,34 @@ Describe 'nc-export-entra.ps1 live mode scopes' {
             $code = Start-NcExportEntra -OutDir $outDir -GeneratedAt '2026-08-17T00:00:00Z'
             $code | Should -Be 0
             Should -Invoke Connect-MgGraph -Times 1
+        } finally {
+            if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+        }
+    }
+}
+
+Describe 'nc-export-entra.ps1 live mode scope verification' {
+    It 'fails loudly (non-zero exit, no output) when Graph consent is missing a required scope' {
+        # Brief item 7(d): after Connect-MgGraph, compare granted scopes
+        # (Get-MgContext).Scopes against requested and fail loudly on
+        # missing ones, rather than silently exporting a partial result.
+        Mock Connect-MgGraph { }
+        Mock Get-MgContext { return [pscustomobject]@{ Scopes = @('User.Read.All') } }
+        Mock Invoke-MgGraphRequest { return [pscustomobject]@{ value = @() } }
+
+        $outDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+        $sw = [System.IO.StringWriter]::new()
+        $origErr = [Console]::Error
+        try {
+            [Console]::SetError($sw)
+            $code = Start-NcExportEntra -OutDir $outDir -GeneratedAt '2026-08-17T00:00:00Z'
+        } finally {
+            [Console]::SetError($origErr)
+        }
+        try {
+            $code | Should -Not -Be 0
+            $sw.ToString() | Should -Match 'Application\.Read\.All'
+            (Test-Path $outDir) | Should -Be $false
         } finally {
             if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
         }
@@ -64,7 +97,9 @@ Describe 'nc-export-entra.ps1 live mode shares the file-mode conversion path' {
         Mock Connect-MgGraph { }
         Mock Invoke-MgGraphRequest {
             param($Method, $Uri)
-            if ($Uri -like '*/users*') {
+            if ($Uri -like '*appRoleAssignedTo*') {
+                return [pscustomobject]@{ value = @() }
+            } elseif ($Uri -like '*/users*') {
                 return [pscustomobject]@{ value = @(
                     [pscustomobject]@{ id = 'u1'; userPrincipalName = 'alice@contoso.com'; displayName = 'Alice' }
                 ) }
@@ -90,6 +125,50 @@ Describe 'nc-export-entra.ps1 live mode shares the file-mode conversion path' {
             $grant = $lines[1] | ConvertFrom-Json
             $grant.clientId | Should -Be 'aaaa1111-aaaa-1111-aaaa-111111111111'
             $grant.scopes | Should -Be @('User.Read')
+        } finally {
+            if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+        }
+    }
+}
+
+Describe 'nc-export-entra.ps1 live mode app role assignments' {
+    It 'fetches appRoleAssignedTo per service principal, filters to principalType User, and merges into grants' {
+        # Brief item 5: PS live mode additionally fetches app role
+        # assignments via /servicePrincipals/{id}/appRoleAssignedTo, paged,
+        # filtered to principalType 'User', and merges them with the
+        # oauth2PermissionGrants-derived grants via the same dedupe path.
+        Mock Connect-MgGraph { }
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            if ($Uri -like '*servicePrincipals/sp1/appRoleAssignedTo*') {
+                return [pscustomobject]@{ value = @(
+                    [pscustomobject]@{ id = 'ara1'; principalId = 'u1'; resourceId = 'sp1'; appRoleId = 'role-guid'; createdDateTime = '2026-04-01T00:00:00Z'; principalType = 'User' }
+                    [pscustomobject]@{ id = 'ara2'; principalId = 'group1'; resourceId = 'sp1'; appRoleId = 'role-guid'; createdDateTime = '2026-04-02T00:00:00Z'; principalType = 'Group' }
+                ) }
+            } elseif ($Uri -like '*/users*') {
+                return [pscustomobject]@{ value = @(
+                    [pscustomobject]@{ id = 'u1'; userPrincipalName = 'alice@contoso.com'; displayName = 'Alice' }
+                ) }
+            } elseif ($Uri -like '*servicePrincipals*') {
+                return [pscustomobject]@{ value = @(
+                    [pscustomobject]@{ id = 'sp1'; appId = 'aaaa1111-aaaa-1111-aaaa-111111111111'; displayName = 'Slack'; appRoles = @(
+                        [pscustomobject]@{ id = 'role-guid'; value = 'Reader' }
+                    ) }
+                ) }
+            } else {
+                return [pscustomobject]@{ value = @() }
+            }
+        }
+
+        $outDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+        try {
+            $code = Start-NcExportEntra -OutDir $outDir -SaltFile (Join-Path $script:RepoRoot 'fixtures' 'entra' 'scenario-basic' 'salt.txt') -GeneratedAt '2026-08-17T00:00:00Z'
+            $code | Should -Be 0
+            $lines = Get-Content -LiteralPath (Join-Path $outDir 'discover-export.ndjson')
+            $lines.Count | Should -Be 2  # header + 1 grant (the Group-typed assignment must be filtered out)
+            $grant = $lines[1] | ConvertFrom-Json
+            $grant.clientId | Should -Be 'aaaa1111-aaaa-1111-aaaa-111111111111'
+            $grant.scopes | Should -Be @('appRole:Reader')
         } finally {
             if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
         }
