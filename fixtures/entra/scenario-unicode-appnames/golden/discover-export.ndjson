@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 1, "skippedRows": 0}
+{"userRef": "user_9be321460a299247", "consentType": "Principal", "clientId": "eeee5555-eeee-5555-eeee-555555555555", "appDisplayName": "Café Analytics™ 日本語アプリ", "scopes": ["User.Read"], "firstSeen": "2026-04-01T00:00:00Z", "lastUsed": null}

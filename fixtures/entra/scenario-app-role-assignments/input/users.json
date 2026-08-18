@@ -1,0 +1,6 @@
+{
+  "value": [
+    { "id": "u1-erin", "userPrincipalName": "erin@contoso.com", "displayName": "Erin" },
+    { "id": "u2-frank", "userPrincipalName": "frank@contoso.com", "displayName": "Frank" }
+  ]
+}

@@ -1,0 +1,5 @@
+time,actorEmail,clientId,displayText,scopes
+2026-01-05T10:00:00Z,alice@example.com,111-aaa.apps.googleusercontent.com,Slack,https://www.googleapis.com/auth/drive.readonly
+2026-01-06T10:00:00Z,   ,222-bbb.apps.googleusercontent.com,Zoom,https://www.googleapis.com/auth/calendar.readonly
+2026-01-07T10:00:00Z,carol@example.com,   ,Trello,https://www.googleapis.com/auth/drive.readonly
+2026-01-08T10:00:00Z,dave@example.com,444-ddd.apps.googleusercontent.com,   ,https://www.googleapis.com/auth/drive.readonly

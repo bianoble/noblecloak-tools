@@ -1,0 +1,3 @@
+time,actorEmail,clientId,displayText,scopes
+2026-01-05T10:00:00Z,alice@example.com,111111111111-aaa.apps.googleusercontent.com,Slack,https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.email
+2026-02-10T09:30:00Z,bob@example.com,222222222222-bbb.apps.googleusercontent.com,Zoom,https://www.googleapis.com/auth/calendar.readonly

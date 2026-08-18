@@ -1,0 +1,3 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 1, "skippedRows": 0}
+{"userRef": null, "consentType": "AllPrincipals", "clientId": "bbbb2222-bbbb-2222-bbbb-222222222222", "appDisplayName": "Zoom", "scopes": ["Mail.Read", "User.Read"], "firstSeen": "2026-02-15T00:00:00Z", "lastUsed": null}
+{"userRef": "user_6f50fdc07c5da907", "consentType": "Principal", "clientId": "10101010-1010-1010-1010-101010101010", "appDisplayName": "Power BI", "scopes": ["User.Read"], "firstSeen": "2026-02-01T00:00:00Z", "lastUsed": null}

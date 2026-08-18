@@ -1,0 +1,12 @@
+{
+  "value": [
+    {
+      "id": "grant-1",
+      "clientId": "30000000-0000-0000-0000-000000000001",
+      "principalId": "20000000-0000-0000-0000-0000000000b1",
+      "resourceId": "msgraph-resource-sp",
+      "scope": "User.Read",
+      "createdDateTime": "2022-05-04T13:22:56.7315339Z"
+    }
+  ]
+}

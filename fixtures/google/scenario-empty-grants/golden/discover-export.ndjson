@@ -1,0 +1,1 @@
+{"kind": "discover-export", "version": "1", "vendor": "google", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export.py", "exportWindow": null, "userCountTotal": 1, "skippedRows": 0}

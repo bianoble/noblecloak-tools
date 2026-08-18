@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 1, "skippedRows": 0}
+{"userRef": "user_63b77850f4fb13a0", "consentType": "Principal", "clientId": "cccc7777-cccc-7777-cccc-777777777777", "appDisplayName": "Miro", "scopes": ["User.Read"], "firstSeen": "2022-05-04T13:22:56.7315339Z", "lastUsed": null}

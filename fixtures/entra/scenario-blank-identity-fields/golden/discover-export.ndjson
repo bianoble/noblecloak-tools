@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "entra", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export-entra", "exportWindow": null, "userCountTotal": 4, "skippedRows": 9}
+{"userRef": "user_17c19bfd9e640f81", "consentType": "Principal", "clientId": "aaaa1111-aaaa-1111-aaaa-111111111111", "appDisplayName": "Slack", "scopes": ["User.Read"], "firstSeen": "2026-01-10T00:00:00Z", "lastUsed": null}

@@ -1,0 +1,2 @@
+{"kind": "discover-export", "version": "1", "vendor": "google", "generatedAt": "2026-08-17T00:00:00Z", "pseudonymized": true, "hashAlgo": "hmac-sha256", "script": "nc-export.py", "exportWindow": null, "userCountTotal": 1, "skippedRows": 0}
+{"userRef": "user_751000e6df4ab365", "consentType": "Principal", "clientId": "555555555555-eee.apps.googleusercontent.com", "appDisplayName": "Café Analytics™ 日本語アプリ", "scopes": ["https://www.googleapis.com/auth/drive.readonly"], "firstSeen": "2026-04-01T00:00:00Z", "lastUsed": "2026-04-01T00:00:00Z"}

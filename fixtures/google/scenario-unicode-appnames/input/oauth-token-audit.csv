@@ -1,0 +1,2 @@
+time,actorEmail,clientId,displayText,scopes
+2026-04-01T00:00:00Z,ren@example.com,555555555555-eee.apps.googleusercontent.com,Café Analytics™ 日本語アプリ,https://www.googleapis.com/auth/drive.readonly

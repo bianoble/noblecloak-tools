@@ -1,0 +1,3 @@
+time,actorEmail,clientId,displayText,scopes
+2026-06-01T08:00:00Z,heidi@example.com,777777777777-ggg.apps.googleusercontent.com,Trello,https://www.googleapis.com/auth/drive.readonly
+2026-06-15T08:00:00Z,heidi@example.com,777777777777-ggg.apps.googleusercontent.com,Trello,https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/calendar.readonly

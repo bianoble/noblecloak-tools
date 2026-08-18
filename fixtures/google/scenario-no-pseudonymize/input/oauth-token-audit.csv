@@ -1,0 +1,2 @@
+time,actorEmail,clientId,displayText,scopes
+2026-05-01T00:00:00Z,gail@example.com,666666666666-fff.apps.googleusercontent.com,Asana,https://www.googleapis.com/auth/userinfo.email

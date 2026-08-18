@@ -1,0 +1,20 @@
+{
+  "value": [
+    {
+      "id": "grant-1",
+      "clientId": "10000000-0000-0000-0000-000000000004",
+      "principalId": "00000000-0000-0000-0000-0000000000c1",
+      "resourceId": "msgraph-resource-sp",
+      "scope": "User.Read",
+      "createdDateTime": "2026-03-01T00:00:00Z"
+    },
+    {
+      "id": "grant-2",
+      "clientId": "10000000-0000-0000-0000-000000000004",
+      "principalId": "00000000-0000-0000-0000-0000000000c1",
+      "resourceId": "msgraph-resource-sp",
+      "scope": "User.Read Files.Read",
+      "createdDateTime": "2026-03-20T00:00:00Z"
+    }
+  ]
+}

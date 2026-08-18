@@ -1,0 +1,12 @@
+{
+  "value": [
+    {
+      "id": "grant-1",
+      "clientId": "sp-notion",
+      "principalId": "u1-erin",
+      "resourceId": "msgraph-resource-sp",
+      "scope": "Files.Read",
+      "createdDateTime": "2026-02-20T00:00:00Z"
+    }
+  ]
+}

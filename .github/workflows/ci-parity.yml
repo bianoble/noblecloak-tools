@@ -1,0 +1,35 @@
+name: ci-parity
+
+# Enforces the epic's core guarantee: nc-export.py entra and
+# nc-export-entra.ps1 must produce byte-identical DEF output from the
+# same input and salt. Runs on all three OSes -- both runtimes are
+# preinstalled/stdlib, so there is no platform-specific setup to skip.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify pwsh is available
+        shell: bash
+        run: |
+          command -v pwsh || {
+            echo "::error::pwsh not found on PATH -- cross-language parity requires PowerShell 7+ on every runner OS" >&2
+            exit 1
+          }
+
+      - name: Run cross-language parity tests
+        # CI=true is already set by GitHub Actions on every runner; the
+        # test suite uses it to fail (instead of silently skipping) if it
+        # somehow can't find pwsh despite the preflight step above passing.
+        run: python3 -m unittest discover -s tests/parity -v
