@@ -1,0 +1,41 @@
+name: Capability Label
+
+# ADR-0032 §5 — the labelling half of the capability bridge.
+#
+# Parses the `Capability:` field from the PR body, validates each id against
+# osvault/Capabilities/, and applies `capability/<id>` labels. A scheduled
+# sweep in osvault later collects merged labelled PRs into each capability's
+# contributing_prs list; nothing here writes to osvault.
+#
+# Fail-soft by design: an unknown id produces a bot comment, never a failed
+# check. This is not a merge gate.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      # Reads osvault/Capabilities/ (cross-repo, which the default GITHUB_TOKEN
+      # cannot do) and applies labels here. Scoped to just those two repos.
+      - uses: actions/create-github-app-token@v2
+        id: token
+        with:
+          app-id: ${{ secrets.CAPABILITY_LABEL_APP_ID }}
+          private-key: ${{ secrets.CAPABILITY_LABEL_APP_PRIVATE_KEY }}
+          owner: bianoble
+          repositories: |
+            ${{ github.event.repository.name }}
+            osvault
+
+      # bianoble-platform-tools capability-label @ capability-label-v1.
+      # SHA-pinned per that repo's convention. Dependabot bumps this where the
+      # repo has a github-actions ecosystem configured; otherwise bump by hand.
+      - uses: bianoble/bianoble-platform-tools/.github/actions/capability-label@17cc86c647f36707f3d89a62aa03f13d71ba22b7
+        with:
+          github-token: ${{ steps.token.outputs.token }}
